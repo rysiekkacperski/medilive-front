@@ -17,6 +17,9 @@
 		"wrangler": "^3.101.0"
 	},
 	"dependencies": {
-		"eventsource-parser": "^3.1.0"
+		"@hono/zod-validator": "^0.8.0",
+		"eventsource-parser": "^3.1.0",
+		"hono": "^4.12.25",
+		"zod": "^3.25.76"
 	}
 }

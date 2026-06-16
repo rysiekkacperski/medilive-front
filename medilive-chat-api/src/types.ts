@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 // 1. Dify Request Payload Types
 export interface DifyPayload {
   inputs: Record<string, unknown>;
@@ -13,6 +15,7 @@ export interface DifyPayload {
 export interface ChatCredentialsData {
   type: 'chat-credentials';
   jwt: string;
+  user_id: string;
 }
 
 // 3. Inner Dify Stream Event Types (Parsed from event.data)
@@ -77,3 +80,36 @@ export interface DifyEndpointError {
   status?: number;
   details?: unknown;
 }
+
+// 5. Hono environment bindings
+
+export interface Env {
+  SERVER_SECRET: string;
+  DIFY_API_KEY: string;
+  DIFY_API_URL: string;
+  KEYS_STORE: KVNamespace;
+  CF_ACCESS_CLIENT_ID?: string;
+  CF_ACCESS_CLIENT_SECRET?: string;
+}
+
+// 6. Request validation schemas
+
+const ChatMessageSchema = z.object({
+  id: z.string(),
+  role: z.string(),
+  content: z.string().optional(),
+  parts: z
+    .array(
+      z.object({
+        type: z.string(),
+        text: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
+
+export const SendMessageRequestSchema = z.object({
+  messages: z.array(ChatMessageSchema).min(1),
+  jwt: z.string().nullable().optional(),
+  dify_workflow_id: z.string().min(1, 'Missing workflow identifier'),
+});

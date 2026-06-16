@@ -1,38 +1,32 @@
 import { createParser, type EventSourceMessage, type ParseError } from "eventsource-parser";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { zValidator } from "@hono/zod-validator";
 import { createJwt, verifyJwt } from "./jwt";
 import type {
   DifyPayload,
   ChatCredentialsData,
   DifyStreamEvent,
 } from "./types";
+import { SendMessageRequestSchema, type Env } from "./types";
 
-/**
- * Environment bindings configured in wrangler.jsonc / Cloudflare dashboard.
- */
-export interface Env {
-  SERVER_SECRET: string;
-  DIFY_API_KEY: string;
-  DIFY_API_URL: string;
-  KEYS_STORE: KVNamespace;
-  CF_ACCESS_CLIENT_ID?: string;
-  CF_ACCESS_CLIENT_SECRET?: string;
-}
+// ── CORS configuration ──
+const CORS_ALLOW_ORIGINS = ["https://medilive.pl", "http://localhost:5173"];
 
-// CORS 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+const app = new Hono<{ Bindings: Env }>();
 
-function jsonResponse(body: object, init: ResponseInit = {}): Response {
-  const headers = new Headers(init.headers);
-  headers.set("Content-Type", "application/json");
-  for (const [key, value] of Object.entries(CORS_HEADERS)) {
-    headers.set(key, value);
-  }
-  return new Response(JSON.stringify(body), { ...init, headers });
-}
+// ── Global Middleware ──
+app.use("*", logger());
+app.use(
+  "*",
+  cors({
+    origin: CORS_ALLOW_ORIGINS,
+    allowMethods: ["POST", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+    maxAge: 86400,
+  }),
+);
 
 /**
  * Generate a simple UUID v4 using the Web Crypto API.
@@ -52,286 +46,284 @@ function uuidv4(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    // Handle CORS preflight
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
-    }
+// ── Routes ──
 
-    // Only accept POST
-    if (request.method !== "POST") {
-      return jsonResponse({ error: "Method not allowed." }, { status: 405 });
-    }
+/**
+ * POST /send-message
+ *
+ * Sends a chat message to Dify via streaming SSE.
+ * Expects JSON body: { messages, jwt?, dify_workflow_id }
+ * Returns a Vercel AI SDK v6-compatible SSE stream.
+ */
+app.post("/send-message", zValidator("json", SendMessageRequestSchema), async (c) => {
+  const { messages, jwt, dify_workflow_id } = c.req.valid("json");
 
-    // Validate environment
-    const { SERVER_SECRET, DIFY_API_KEY, DIFY_API_URL, KEYS_STORE, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET } = env;
+  // Validate environment
+  const { SERVER_SECRET, DIFY_API_KEY, DIFY_API_URL, KEYS_STORE, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET } = c.env;
 
-    if (!SERVER_SECRET || !DIFY_API_URL) {
-      return jsonResponse({ error: "Server configuration error." }, { status: 500 });
-    }
+  if (!SERVER_SECRET || !DIFY_API_URL) {
+    return c.json({ error: "Server configuration error." }, { status: 500 });
+  }
 
-    // Parse body
-    interface ChatMessage {
-      id: string;
-      role: string;
-      content?: string;
-      parts?: Array<{ type: string; text?: string }>;
-    }
-    let body: {
-      messages: ChatMessage[];
-      jwt?: string | null;
-      dify_workflow_id?: string;
-    };
+  // Resolve API key: KV first, then env fallback
+  let apiKey: string | null = null;
+  if (KEYS_STORE) {
     try {
-      body = await request.json();
+      const kvKey = await KEYS_STORE.get(dify_workflow_id);
+      if (kvKey) {
+        apiKey = kvKey;
+      }
     } catch {
-      return jsonResponse({ error: "Invalid JSON body provided." }, { status: 400 });
+      // KV unavailable — fall back to env DIFY_API_KEY
     }
+  }
+  if (!apiKey) {
+    apiKey = DIFY_API_KEY;
+  }
+  if (!apiKey) {
+    return c.json(
+      { error: "Server configuration error: no API key available." },
+      { status: 500 },
+    );
+  }
 
-    console.log("Received request with body:", body);
-
-    const { messages, jwt, dify_workflow_id } = body;
-
-    if (!dify_workflow_id) {
-      return jsonResponse({ error: "Missing workflow identifier." }, { status: 400 });
+  // Verify JWT (if provided) — extract conversation_id and user_id
+  let conversationId: string | undefined;
+  let storedUserId: string | undefined;
+  if (jwt) {
+    const payload = await verifyJwt(jwt, SERVER_SECRET);
+    if (payload?.conversation_id) {
+      conversationId = payload.conversation_id as string;
     }
-
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return jsonResponse({ error: "Messages array is required." }, { status: 400 });
+    if (payload?.user_id) {
+      storedUserId = payload.user_id as string;
     }
+    // Invalid/expired JWT is silently ignored — starts a new conversation
+  }
 
-    // Resolve API key: KV first, then env fallback 
-    let apiKey: string | null = null;
-    if (KEYS_STORE) {
-      try {
-        const kvKey = await KEYS_STORE.get(dify_workflow_id);
-        if (kvKey) {
-          apiKey = kvKey;
-        }
-      } catch {
-        // KV unavailable — fall back to env DIFY_API_KEY
-      }
-    }
-    if (!apiKey) {
-      apiKey = DIFY_API_KEY;
-    }
-    if (!apiKey) {
-      return jsonResponse(
-        { error: "Server configuration error: no API key available." },
-        { status: 500 },
-      );
-    }
+  // Generate or reuse user_id — worker is the source of truth
+  const userId = storedUserId || uuidv4();
 
-    // Verify JWT (if provided)
-    let conversationId: string | undefined;
-    if (jwt) {
-      const payload = await verifyJwt(jwt, SERVER_SECRET);
-      if (payload?.conversation_id) {
-        conversationId = payload.conversation_id as string;
-      }
-      // Invalid/expired JWT is silently ignored — starts a new conversation
-    }
+  // Extract latest user message
+  const lastUserMessage = [...messages]
+    .reverse()
+    .find((m) => m.role === "user");
 
-    // Extract latest user message
-    const lastUserMessage = [...messages]
-      .reverse()
-      .find((m) => m.role === "user");
+  if (!lastUserMessage) {
+    return c.json(
+      { error: "No user message found in the conversation." },
+      { status: 400 },
+    );
+  }
 
-    if (!lastUserMessage) {
-      return jsonResponse(
-        { error: "No user message found in the conversation." },
-        { status: 400 },
-      );
-    }
+  const query =
+    lastUserMessage.content ||
+    lastUserMessage.parts
+      ?.filter((p) => p.type === "text")
+      .map((p) => p.text ?? "")
+      .join("") ||
+    "";
 
-    const query =
-      lastUserMessage.content ||
-      lastUserMessage.parts
-        ?.filter((p) => p.type === "text")
-        .map((p) => p.text ?? "")
-        .join("") ||
-      "";
+  // Build Dify payload
+  const difyPayload: DifyPayload = {
+    inputs: {},
+    query,
+    response_mode: "streaming",
+    user: userId,
+  };
+  if (conversationId) difyPayload.conversation_id = conversationId;
+  difyPayload.app_id = dify_workflow_id;
 
-    // Build Dify payload
-    const difyPayload: DifyPayload = {
-      inputs: {},
-      query,
-      response_mode: "streaming",
-      user: "anonymous",
+  // Call Dify
+  let difyResponse: Response;
+  try {
+    const difyHeaders: Record<string, string> = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
     };
-    if (conversationId) difyPayload.conversation_id = conversationId;
-    difyPayload.app_id = dify_workflow_id;
-
-    // Call Dify
-    let difyResponse: Response;
-    try {
-      const difyHeaders: Record<string, string> = {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      };
-      if (CF_ACCESS_CLIENT_ID && CF_ACCESS_CLIENT_SECRET) {
-        difyHeaders["CF-Access-Client-Id"] = CF_ACCESS_CLIENT_ID;
-        difyHeaders["CF-Access-Client-Secret"] = CF_ACCESS_CLIENT_SECRET;
-      }
-      difyResponse = await fetch(`${DIFY_API_URL}/v1/chat-messages`, {
-        method: "POST",
-        headers: difyHeaders,
-        body: JSON.stringify(difyPayload),
-      });
-    } catch {
-      return jsonResponse(
-        { error: "Upstream AI provider is unreachable." },
-        { status: 502 },
-      );
+    if (CF_ACCESS_CLIENT_ID && CF_ACCESS_CLIENT_SECRET) {
+      difyHeaders["CF-Access-Client-Id"] = CF_ACCESS_CLIENT_ID;
+      difyHeaders["CF-Access-Client-Secret"] = CF_ACCESS_CLIENT_SECRET;
     }
+    difyResponse = await fetch(`${DIFY_API_URL}/v1/chat-messages`, {
+      method: "POST",
+      headers: difyHeaders,
+      body: JSON.stringify(difyPayload),
+    });
+  } catch {
+    return c.json(
+      { error: "Upstream AI provider is unreachable." },
+      { status: 502 },
+    );
+  }
 
-    if (!difyResponse.ok) {
-      const details = await difyResponse.text();
-      return jsonResponse(
-        { error: `Provider Error: ${difyResponse.statusText}`, details },
-        { status: difyResponse.status },
-      );
-    }
+  if (!difyResponse.ok) {
+    const details = await difyResponse.text();
+    return c.json(
+      { error: `Provider Error: ${difyResponse.statusText}`, details },
+      difyResponse.status as 200 | 400 | 401 | 403 | 404 | 500 | 502,
+    );
+  }
 
-    // Build the SSE pipe
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
+  // Build the SSE pipe
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
 
-    // Stable IDs for this response
-    const messageId = uuidv4();
-    const textId = uuidv4();
+  // Stable IDs for this response
+  const messageId = uuidv4();
+  const textId = uuidv4();
 
-    /**
-     * Writes one SSE event to the pipe.
-     * Vercel AI SDK v6 Data Stream Protocol: `data: <JSON>\n\n`
-     */
-    const sse = (payload: object): Promise<void> =>
-      writer.write(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+  /**
+   * Writes one SSE event to the pipe.
+   * Vercel AI SDK v6 Data Stream Protocol: `data: <JSON>\n\n`
+   */
+  const sse = (payload: object): Promise<void> =>
+    writer.write(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 
-    // v6 event helpers
-    const sendMessageStart = () =>
-      sse({ type: "start", messageId });
+  // v6 event helpers
+  const sendMessageStart = () =>
+    sse({ type: "start", messageId });
 
-    // Text block lifecycle
-    const sendTextStart = () => sse({ type: "text-start", id: textId });
-    const sendTextDelta = (delta: string) =>
-      sse({ type: "text-delta", id: textId, delta });
-    const sendTextEnd = () => sse({ type: "text-end", id: textId });
+  // Text block lifecycle
+  const sendTextStart = () => sse({ type: "text-start", id: textId });
+  const sendTextDelta = (delta: string) =>
+    sse({ type: "text-delta", id: textId, delta });
+  const sendTextEnd = () => sse({ type: "text-end", id: textId });
 
-    // Custom typed data — readable on the client via message.parts
-    // (type = 'data-chat-credentials')
-    const sendCredentials = (data: ChatCredentialsData) =>
-      sse({ type: "data-chat-credentials", data });
+  // Custom typed data — readable on the client via message.parts
+  // (type = 'data-chat-credentials')
+  const sendCredentials = (data: ChatCredentialsData) =>
+    sse({ type: "data-chat-credentials", data });
 
-    const sendError = (errorText: string) =>
-      sse({ type: "error", errorText });
+  const sendError = (errorText: string) =>
+    sse({ type: "error", errorText });
 
-    const sendFinish = async () => {
-      await sse({ type: "finish-step" });
-      await sse({ type: "finish" });
-      // SSE stream termination marker
-      await writer.write(encoder.encode("data: [DONE]\n\n"));
-    };
+  const sendFinish = async () => {
+    await sse({ type: "finish-step" });
+    await sse({ type: "finish" });
+    // SSE stream termination marker
+    await writer.write(encoder.encode("data: [DONE]\n\n"));
+  };
 
-    // Stream Dify → client
-    // Runs fully async behind the returned Response
-    (async () => {
-      let hasSentCredentials = false;
+  // Stream Dify → client
+  // Runs fully async behind the returned Response
+  (async () => {
+    let hasSentCredentials = false;
 
-      await sendMessageStart();
-      await sendTextStart();
+    await sendMessageStart();
+    await sendTextStart();
 
-      const parser = createParser({
-        onError(error: ParseError) {
-          console.error("eventsource-parser error:", error);
-        },
+    const parser = createParser({
+      onError(error: ParseError) {
+        console.error("eventsource-parser error:", error);
+      },
 
-        onEvent(event: EventSourceMessage) {
-          try {
-            const data = JSON.parse(event.data) as DifyStreamEvent;
+      onEvent(event: EventSourceMessage) {
+        try {
+          const data = JSON.parse(event.data) as DifyStreamEvent;
 
-            if (data.event === "message") {
-              // Send JWT credentials on the first token of a new conversation
-              if (!conversationId && !hasSentCredentials && data.conversation_id) {
-                // Create a JWT embedding the Dify conversation_id
-                createJwt(
-                  { conversation_id: data.conversation_id },
-                  SERVER_SECRET,
-                  86400, // 24h expiry
-                ).then((token) => {
-                  sendCredentials({
-                    type: "chat-credentials",
-                    jwt: token,
-                  });
+          if (data.event === "message") {
+            // Send JWT credentials on the first token of a new conversation
+            if (!conversationId && !hasSentCredentials && data.conversation_id) {
+              // Create a JWT embedding the Dify conversation_id and user_id
+              createJwt(
+                { conversation_id: data.conversation_id, user_id: userId },
+                SERVER_SECRET,
+                86400, // 24h expiry
+              ).then((token) => {
+                sendCredentials({
+                  type: "chat-credentials",
+                  jwt: token,
+                  user_id: userId,
                 });
-                hasSentCredentials = true;
-              }
-
-              // Each Dify token → one text-delta event
-              sendTextDelta(data.answer);
-            } else if (
-              data.event === "node_started" ||
-              data.event === "workflow_started"
-            ) {
-              const title =
-                data.data?.title as string | undefined;
-              if (title) {
-                sse({ type: "data-node-status", data: { title } });
-              }
-            } else if (
-              data.event === "node_finished" ||
-              data.event === "workflow_finished"
-            ) {
-              sse({ type: "data-node-status", data: { title: null } });
-            } else if (data.event === "error") {
-              sendError(data.message ?? "Stream Error");
+              });
+              hasSentCredentials = true;
             }
-          } catch (err) {
-            console.error("Failed to parse inner Dify event JSON", err);
-          }
-        },
-      });
 
-      const reader = difyResponse.body?.getReader();
-      if (!reader) {
-        await sendError("Failed to initialize stream reader");
-        await writer.close();
-        return;
-      }
-
-      const decoder = new TextDecoder("utf-8");
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            parser.reset({ consume: true });
-            break;
+            // Each Dify token → one text-delta event
+            sendTextDelta(data.answer);
+          } else if (
+            data.event === "node_started" ||
+            data.event === "workflow_started"
+          ) {
+            const title =
+              data.data?.title as string | undefined;
+            if (title) {
+              sse({ type: "data-node-status", data: { title } });
+            }
+          } else if (
+            data.event === "node_finished" ||
+            data.event === "workflow_finished"
+          ) {
+            sse({ type: "data-node-status", data: { title: null } });
+          } else if (data.event === "error") {
+            sendError(data.message ?? "Stream Error");
           }
-          parser.feed(decoder.decode(value, { stream: true }));
+        } catch (err) {
+          console.error("Failed to parse inner Dify event JSON", err);
         }
-      } catch (streamError) {
-        console.error("Stream reading interrupted:", streamError);
-      } finally {
-        reader.releaseLock();
-        // Close the text block, then signal message completion, then [DONE]
-        await sendTextEnd();
-        await sendFinish();
-        await writer.close();
-      }
-    })();
-
-    // Return the readable end immediately — the async block above fills it
-    return new Response(readable, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "x-vercel-ai-ui-message-stream": "v1",
-        "Cache-Control": "no-cache, no-transform",
-        "Connection": "keep-alive",
-        ...CORS_HEADERS,
       },
     });
-  },
-};
+
+    const reader = difyResponse.body?.getReader();
+    if (!reader) {
+      await sendError("Failed to initialize stream reader");
+      await writer.close();
+      return;
+    }
+
+    const decoder = new TextDecoder("utf-8");
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          parser.reset({ consume: true });
+          break;
+        }
+        parser.feed(decoder.decode(value, { stream: true }));
+      }
+    } catch (streamError) {
+      console.error("Stream reading interrupted:", streamError);
+    } finally {
+      reader.releaseLock();
+      // Close the text block, then signal message completion, then [DONE]
+      await sendTextEnd();
+      await sendFinish();
+      await writer.close();
+    }
+  })();
+
+  // Return the readable end immediately — the async block above fills it
+  return new Response(readable, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "x-vercel-ai-ui-message-stream": "v1",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+    },
+  });
+});
+
+// ── 404 catch-all ──
+app.notFound((c) => {
+  return c.json(
+    { success: false, error: `Not Found: ${c.req.method} ${c.req.path}` },
+    { status: 404 },
+  );
+});
+
+// ── Global error handler ──
+app.onError((err, c) => {
+  console.error("Unhandled error:", err);
+  return c.json(
+    {
+      success: false,
+      error: "Internal server error.",
+    },
+    { status: 500 },
+  );
+});
+
+export default app;

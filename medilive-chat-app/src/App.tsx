@@ -6,7 +6,7 @@ function App() {
   return (
     <div className="h-dvh w-full">
       <ChatWidget
-        apiEndpoint={import.meta.env.VITE_WORKER_API_URL ?? "/api/chat"}
+        apiEndpoint={`${import.meta.env.VITE_WORKER_API_URL}/send-message`}
         botName="Asystent kliniki NovaMed"
         botAvatarUrl={avatarSrc}
         poweredByLogoSrc={mediLiveLogoSrc}
