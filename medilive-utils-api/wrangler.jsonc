@@ -1,0 +1,22 @@
+{
+  "name": "medilive-utils-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-05",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "remote": true
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KEYS_STORE",
+      "id": "31e633b46af344cd92d2b89320653736",
+      "preview_id": "31e633b46af344cd92d2b89320653736"
+    }
+  ]
+}
