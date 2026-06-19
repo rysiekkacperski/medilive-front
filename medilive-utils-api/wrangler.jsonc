@@ -6,17 +6,24 @@
   "observability": {
     "enabled": true
   },
-  "send_email": [
-    {
-      "name": "EMAIL",
-      "remote": true
-    }
-  ],
+  "vars": {
+    "SMTP_HOST": "email-smtp.us-east-1.amazonaws.com",
+    "SMTP_PORT": "587",
+    "SENDER_NAME": "MediLive"
+  },
   "kv_namespaces": [
     {
       "binding": "KEYS_STORE",
       "id": "31e633b46af344cd92d2b89320653736",
       "preview_id": "31e633b46af344cd92d2b89320653736"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "medilive",
+      "database_id": "b39817ca-9018-4e08-bf10-5f742c1247e7",
+      "migrations_dir": "./migrations"
     }
   ]
 }

@@ -26,11 +26,12 @@ function generateKeyString(): string {
  *
  * @returns The plaintext key (only returned once — caller must present to user).
  */
-export async function createApiKey(kv: KVNamespace): Promise<string> {
+export async function createApiKey(kv: KVNamespace, tenantId: string): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
 
   const payload: ApiKeyPayload = {
     key: generateKeyString(),
+    tenant_id: tenantId,
     created_at: now,
     expires_at: now + THIRTY_DAYS_SECONDS,
     refreshable_until: now + ONE_YEAR_SECONDS,
@@ -168,8 +169,9 @@ export const apiKeyAuthMiddleware = createMiddleware<{
     );
   }
 
-  // Store the validated key for downstream handlers
+  // Store the validated key and tenant for downstream handlers
   c.set('apiKey', key);
+  c.set('tenantId', payload.tenant_id);
 
   await next();
 });

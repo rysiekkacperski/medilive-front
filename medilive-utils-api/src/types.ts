@@ -14,13 +14,32 @@ export type EmailContent = z.infer<typeof EmailContentSchema>;
 // ── API Request Schema ──
 export const SendMailRequestSchema = z.object({
   to: z.string().email('Invalid recipient email address'),
+  senderEmail: z.string().email('Invalid sender email address'),
+  senderName: z.string().min(1, 'Sender name is required'),
   subject: z.string().min(1, 'Subject is required').max(998, 'Subject too long'),
   content: EmailContentSchema,
-  // Optional: specify a custom sender name override
-  senderName: z.string().optional(),
 });
 
 export type SendMailRequest = z.infer<typeof SendMailRequestSchema>;
+
+// ── Visit Request Schema ──
+export const CreateVisitRequestSchema = z.object({
+  'user-id': z.string().min(1, 'user-id is required'),
+  'institution-id': z.string().min(1, 'institution-id is required'),
+  'doctor-id': z.string().min(1, 'doctor-id is required'),
+  'phone-number': z.string().min(6, 'phone-number is required'),
+  email: z.string().email('Invalid email address').optional(),
+  'type': z.string().min(1, 'type is required'),
+});
+
+export type CreateVisitRequest = z.infer<typeof CreateVisitRequestSchema>;
+
+// ── SMS Send Request Schema ──
+export const SmsSendRequestSchema = z.object({
+  'visit-id': z.string().min(1, 'visit-id is required'),
+});
+
+export type SmsSendRequest = z.infer<typeof SmsSendRequestSchema>;
 
 // ── API Response Types ──
 export interface SendMailSuccessResponse {
@@ -34,31 +53,10 @@ export interface SendMailErrorResponse {
   code?: string;
 }
 
-// ── Error codes returned by the Email binding ──
-export type EmailErrorCode =
-  | 'E_VALIDATION_ERROR'
-  | 'E_FIELD_MISSING'
-  | 'E_TOO_MANY_RECIPIENTS'
-  | 'E_SENDER_NOT_VERIFIED'
-  | 'E_RECIPIENT_NOT_ALLOWED'
-  | 'E_RECIPIENT_SUPPRESSED'
-  | 'E_SENDER_DOMAIN_NOT_AVAILABLE'
-  | 'E_CONTENT_TOO_LARGE'
-  | 'E_RATE_LIMIT_EXCEEDED'
-  | 'E_DAILY_LIMIT_EXCEEDED'
-  | 'E_DELIVERY_FAILED'
-  | 'E_INTERNAL_SERVER_ERROR'
-  | 'E_HEADER_NOT_ALLOWED'
-  | 'E_HEADER_USE_API_FIELD'
-  | 'E_HEADER_VALUE_INVALID'
-  | 'E_HEADER_VALUE_TOO_LONG'
-  | 'E_HEADER_NAME_INVALID'
-  | 'E_HEADERS_TOO_LARGE'
-  | 'E_HEADERS_TOO_MANY';
-
 // ── API Key Types ──
 export interface ApiKeyPayload {
   key: string;
+  tenant_id: string;
   created_at: number;
   expires_at: number; // 30 days from creation
   refreshable_until: number; // 1 year from creation
@@ -66,35 +64,18 @@ export interface ApiKeyPayload {
 
 // ── Environment Bindings ──
 export interface Env {
-  EMAIL: {
-    send(message: EmailMessage): Promise<{ messageId: string }>;
-  };
   KEYS_STORE: KVNamespace;
-  SENDER_EMAIL: string;
+  DB: D1Database;
+  SMSAPI_TOKEN: string;
   SENDER_NAME: string;
-}
-
-// The EmailMessage type matches the CF Email Workers binding
-interface EmailMessage {
-  to: string | string[];
-  from: { email: string; name: string };
-  subject: string;
-  html: string;
-  text: string;
-  cc?: string | string[];
-  bcc?: string | string[];
-  replyTo?: string;
-  attachments?: Array<{
-    content: string | ArrayBuffer | ArrayBufferView;
-    filename: string;
-    type: string;
-    disposition?: 'attachment' | 'inline';
-    contentId?: string;
-  }>;
-  headers?: Record<string, string>;
+  SMTP_HOST: string;
+  SMTP_PORT: string;
+  SMTP_USER: string;
+  SMTP_PASS: string;
 }
 
 // ── Hono Variables (set by middleware) ──
 export interface Variables {
   apiKey: string;
+  tenantId: string;
 }
