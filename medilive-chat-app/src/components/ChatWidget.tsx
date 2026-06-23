@@ -46,6 +46,7 @@ export function ChatWidget({
     hasStarted,
     hasSentFirstMessage,
     nodeStatus,
+    visitId,
     startChat,
     newChat,
     stop,
@@ -87,6 +88,7 @@ export function ChatWidget({
               botName={botName}
               botAvatarUrl={botAvatarUrl}
               nodeStatus={nodeStatus}
+              visitId={visitId}
             />
 
             {error && (

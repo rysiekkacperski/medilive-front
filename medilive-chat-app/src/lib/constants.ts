@@ -50,6 +50,14 @@ export const POWERED_BY = {
   label: "POWERED BY",
 } as const
 
+/**
+ * Maps raw Dify node titles to user-facing Polish labels.
+ * If a node title is not in this map, the raw title is shown as-is (uppercased).
+ */
+export const NODE_TITLE_MAP: Record<string, string> = {
+  CREATE_VISIT: "Tworzę wizytę",
+}
+
 export const DEFAULT_SUGGESTIONS: string[] = [
   "Jakie usługi oferujecie?",
   "Jakie są godziny otwarcia kliniki?",

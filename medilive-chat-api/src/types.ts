@@ -18,6 +18,11 @@ export interface ChatCredentialsData {
   user_id: string;
 }
 
+export interface VisitCreatedData {
+  type: 'visit-created';
+  visitId: string;
+}
+
 // 3. Inner Dify Stream Event Types (Parsed from event.data)
 
 interface DifyEventBase {

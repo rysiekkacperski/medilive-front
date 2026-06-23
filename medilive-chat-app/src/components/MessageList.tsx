@@ -2,6 +2,8 @@ import { Message, MessageAvatar, MessageContent } from "@/components/ui/message"
 import { cn } from "@/lib/utils"
 import { Loader } from "@/components/ui/loader"
 import { MESSAGE_LIST } from "@/lib/constants"
+import { Link } from "react-router-dom"
+import { ArrowRight } from "lucide-react"
 import type { UIMessage } from "ai"
 
 interface MessageListProps {
@@ -10,6 +12,7 @@ interface MessageListProps {
   botName: string
   botAvatarUrl?: string
   nodeStatus?: string | null
+  visitId?: string | null
 }
 
 export function MessageList({
@@ -18,6 +21,7 @@ export function MessageList({
   botName,
   botAvatarUrl,
   nodeStatus,
+  visitId,
 }: MessageListProps) {
   if (messages.length === 0) return null
 
@@ -80,6 +84,25 @@ export function MessageList({
              )}
            </div>
         </Message>
+      )}
+
+      {visitId && !isStreaming && (
+        <Link
+          to={`/wizyty/${visitId}`}
+          className={cn(
+            "flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/5 px-4 py-3",
+            "hover:bg-primary/10 transition-colors cursor-pointer",
+            "no-underline",
+            "animate-visit-card",
+          )}
+        >
+          <div className="flex size-8 items-center justify-center rounded-full bg-primary/10">
+            <ArrowRight className="size-4 text-primary" />
+          </div>
+          <span className="text-sm font-medium text-foreground">
+            Kliknij, aby umówić wizytę
+          </span>
+        </Link>
       )}
     </div>
   )

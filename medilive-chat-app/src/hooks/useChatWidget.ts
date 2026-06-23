@@ -1,6 +1,7 @@
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
 import { useState } from "react"
+import { NODE_TITLE_MAP } from "@/lib/constants"
 
 const STORAGE_KEY = "medilive-chat-credentials"
 
@@ -32,6 +33,7 @@ export function useChatWidget(apiEndpoint: string) {
   const [jwt, setJwt] = useState<string | null>(getStoredJwt)
   const [hasStarted, setHasStarted] = useState(false)
   const [nodeStatus, setNodeStatus] = useState<string | null>(null)
+  const [visitId, setVisitId] = useState<string | null>(null)
 
   const chat = useChat({
     transport: new DefaultChatTransport({
@@ -52,7 +54,16 @@ export function useChatWidget(apiEndpoint: string) {
         storeJwt(d.jwt)
       }
       if (d?.type === "data-node-status") {
-        setNodeStatus((d.data as { title: string | null })?.title ?? null)
+        const rawTitle = (d.data as { title: string | null })?.title
+        if (rawTitle) {
+          const displayTitle = NODE_TITLE_MAP[rawTitle] ?? rawTitle
+          setNodeStatus(displayTitle.toUpperCase())
+        } else {
+          setNodeStatus(null)
+        }
+      }
+      if (d?.type === "visit-created" && typeof d.visitId === "string") {
+        setVisitId(d.visitId)
       }
     },
   })
@@ -71,6 +82,7 @@ export function useChatWidget(apiEndpoint: string) {
     clearJwt()
     setJwt(null)
     setNodeStatus(null)
+    setVisitId(null)
     setMessages([])
     setHasStarted(false)
   }
@@ -80,6 +92,7 @@ export function useChatWidget(apiEndpoint: string) {
     hasStarted,
     hasSentFirstMessage,
     nodeStatus,
+    visitId,
     startChat,
     newChat,
   }

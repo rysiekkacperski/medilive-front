@@ -12,7 +12,7 @@ import type {
 import { SendMessageRequestSchema, type Env } from "./types";
 
 // ── CORS configuration ──
-const CORS_ALLOW_ORIGINS = ["https://medilive.pl", "http://localhost:5173"];
+const CORS_ALLOW_ORIGINS = ["https://medilive.pl", "https://demo.medilive.pl", "http://localhost:5173"];
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -250,10 +250,26 @@ app.post("/send-message", zValidator("json", SendMessageRequestSchema), async (c
             if (title) {
               sse({ type: "data-node-status", data: { title } });
             }
-          } else if (
-            data.event === "node_finished" ||
-            data.event === "workflow_finished"
-          ) {
+          } else if (data.event === "node_finished") {
+            const title = data.data?.title as string | undefined;
+            sse({ type: "data-node-status", data: { title: null } });
+
+            // Detect CREATE_VISIT node and forward visit ID
+            if (title === "CREATE_VISIT") {
+              const outputs = data.data?.outputs as { body?: string } | undefined;
+              if (outputs?.body) {
+                try {
+                  const parsed = JSON.parse(outputs.body) as { visit?: { id?: string } };
+                  const visitId = parsed?.visit?.id;
+                  if (visitId) {
+                    sse({ type: "data-visit-created", data: { visitId } });
+                  }
+                } catch {
+                  console.error("Failed to parse CREATE_VISIT outputs.body");
+                }
+              }
+            }
+          } else if (data.event === "workflow_finished") {
             sse({ type: "data-node-status", data: { title: null } });
           } else if (data.event === "error") {
             sendError(data.message ?? "Stream Error");

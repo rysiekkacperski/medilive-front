@@ -1,26 +1,20 @@
 # MediLive - AI chat platform for medical clinics
 
-> **Proprietary software.** This project is not open-source. To use any component
-> of this repository in your organization, please reach out to
-> **[kontakt@medilive.pl](mailto:kontakt@medilive.pl).**
-
----
-
 ## Overview
 
-MediLive is a **white-label AI chat platform** purpose-built for Polish medical
+MediLive is an AI chat platform purpose-built for Polish medical
 clinics. It ships as a set of three packages that together deliver:
 
 - A **configurable, embeddable React chat widget** that streams AI responses
   directly from a clinic's [Dify](https://dify.ai) workflow,
 - A **thin proxy layer** (Cloudflare Workers) that handles SSE streaming, JWT
-  session management, and per-tenant API-key resolution — so the frontend never
+  session management, and per-tenant API-key resolution - so the frontend never
   talks to Dify with hard-coded secrets,
 - A **utility API** for transactional email (Amazon SES), SMS reminders
   (smsapi.pl), and visit/appointment persistence (Cloudflare D1).
 
 Every clinic gets its own Dify workflow, branding, and optionally its own set of
-utility endpoints — the platform is designed so that new tenants can be onboarded
+utility endpoints - the platform is designed so that new tenants can be onboarded
 with only configuration and zero code changes.
 
 ---
@@ -35,7 +29,7 @@ with only configuration and zero code changes.
 
 ## Package Breakdown
 
-### 1. `medilive-chat-app` — React Chat Widget
+### 1. `medilive-chat-app` - React Chat Widget
 
 **Runtime:** browser (SPA, bundled with Vite)  
 **Key libraries:** React 19, [Vercel AI SDK](https://sdk.vercel.ai) v6,
@@ -49,7 +43,7 @@ React host application. It handles the full messaging lifecycle:
 
 1. User types a question → sent to the **chat-api** Worker via
    `DefaultChatTransport` (Vercel AI SDK v6 data-stream protocol).
-2. Each SSE chunk is rendered as a **streaming text-delta** — the answer appears
+2. Each SSE chunk is rendered as a **streaming text-delta** - the answer appears
    token-by-token.
 3. On the **very first token** of a new conversation the Worker returns a
    cryptographically signed JWT (embedded in a custom `data-chat-credentials`
@@ -63,7 +57,7 @@ React host application. It handles the full messaging lifecycle:
 | Configuration point | How it works |
 |---|---|
 | `VITE_WORKER_API_URL` | Points to the **chat-api** Worker (per environment). |
-| `VITE_DIFY_WORKFLOW_ID` | Sent in the POST body — tells the Worker which Dify workflow to call. |
+| `VITE_DIFY_WORKFLOW_ID` | Sent in the POST body - tells the Worker which Dify workflow to call. |
 | `<ChatWidget botName>` | Display name shown in the header. |
 | `<ChatWidget botAvatarUrl>` | Avatar image (clinic logo or doctor photo). |
 | `<ChatWidget poweredByLogoSrc>` | Logo rendered in the "Powered by …" footer. |
@@ -75,23 +69,27 @@ React host application. It handles the full messaging lifecycle:
 - Passing the clinic's branding props to `<ChatWidget>`,
 - Setting `VITE_DIFY_WORKFLOW_ID` at build time (or providing it per instance).
 
-The widget is **not** hard-coded to any specific clinic — NovaMed is just one
+The widget is **not** hard-coded to any specific clinic - NovaMed is just one
 reference deployment.
 
 #### Component Map
 
 ```
 App.tsx
- └── ChatWidget.tsx
-       ├── ChatHeader.tsx          ← botName, botAvatar, new-chat button
-       ├── WelcomeScreen.tsx       ← prompt suggestions, start-chat callback
-       ├── MessageList.tsx         ← rendered message bubbles
-       │     └── ui/message.tsx
-       │           └── ui/markdown.tsx   ← react-markdown + remark-gfm + shiki
-       │           └── ui/code-block.tsx  ← syntax-highlighted code blocks
-       ├── ChatInput.tsx           ← prompt-input (prompt-kit), send/stop
-       ├── PromptSuggestions.tsx   ← clickable suggestion chips
-       └── PoweredBy.tsx           ← footer logo
+ └── Routes (react-router-dom)
+      ├── "/" ──▶ ChatPage
+      │            └── ChatWidget.tsx
+      │                 ├── ChatHeader.tsx          ← botName, botAvatar, new-chat button
+      │                 ├── WelcomeScreen.tsx       ← prompt suggestions, start-chat callback
+      │                 ├── MessageList.tsx         ← rendered message bubbles + visit card
+      │                 │     ├── ui/message.tsx
+      │                 │     │     └── ui/markdown.tsx   ← react-markdown + remark-gfm + shiki
+      │                 │     │     └── ui/code-block.tsx  ← syntax-highlighted code blocks
+      │                 │     └── Visit card           ← "Kliknij, aby umowic wizyte" (animated)
+      │                 ├── ChatInput.tsx           ← prompt-input (prompt-kit), send/stop
+      │                 ├── PromptSuggestions.tsx   ← clickable suggestion chips
+      │                 └── PoweredBy.tsx           ← footer logo
+      └── "/wizyty/:visitId" ──▶ VisitPage.tsx      ← confirmation page with visit ID
 ```
 
 State is driven by `useChatWidget()` (custom hook wrapping `useChat` from
@@ -107,9 +105,48 @@ const chat = useChat({
   onData: (data) => {
     // detect chat-credentials → persist JWT
     // detect data-node-status → show workflow step indicator
+    //  - Maps Dify node titles through NODE_TITLE_MAP (PL localized labels)
+    //  - Always uppercased (e.g. "CREATE_VISIT" → "TWORZE WIZYTE")
+    // detect visit-created → set visitId → render animated visit card
   },
 })
 ```
+
+##### Node Title Mapping
+
+Raw Dify node titles are translated to user-facing Polish labels via
+`NODE_TITLE_MAP` in `constants.ts`. All labels are displayed in **uppercase**:
+
+```ts
+export const NODE_TITLE_MAP: Record<string, string> = {
+  CREATE_VISIT: "Tworze wizyte",
+  // ... add more as new workflow nodes are introduced
+}
+```
+
+If a node title is not in the map, the raw title is shown uppercased as-is.
+
+##### Visit Card
+
+When the Dify workflow creates a visit (`node_finished` with title
+`CREATE_VISIT`), the middleware forwards the `visitId` to the frontend via a
+custom `data-visit-created` SSE event. `useChatWidget` stores it in state.
+
+Once streaming finishes, `MessageList` renders an animated card below the
+last assistant message:
+
+```
+┌─────────────────────────────────────────────┐
+│  →  Kliknij, aby umowic wizyte              │
+└─────────────────────────────────────────────┘
+```
+
+Clicking the card navigates to `/wizyty/{visitId}` via `react-router-dom`
+(client-side, no page reload). The `VisitPage` component displays a
+confirmation: "Wizyta o identyfikatorze {id} zostala zarejestrowana."
+
+The card uses a CSS `@keyframes card-enter` animation (fade-in + slide-up,
+`0.4s ease-out`).
 
 #### Environment Variables
 
@@ -120,7 +157,7 @@ const chat = useChat({
 
 ---
 
-### 2. `medilive-chat-api` — Streaming Proxy Worker
+### 2. `medilive-chat-api` - Streaming Proxy Worker
 
 **Runtime:** Cloudflare Workers  
 **Key libraries:** [Hono](https://hono.dev) 4, `eventsource-parser`, Zod
@@ -145,15 +182,17 @@ Browser ──POST /send-message──▶ medilive-chat-api ──SSE──▶ D
    - First looks up `KEYS_STORE.get(dify_workflow_id)` (Workers KV),
    - Falls back to `DIFY_API_KEY` environment variable.
 3. **Decode the JWT** (if present) to extract `conversation_id` and `user_id`
-   — this resumes an existing Dify conversation.
+   - this resumes an existing Dify conversation.
 4. **Call Dify** `POST /v1/chat-messages` with `response_mode: "streaming"`.
    - Supports Cloudflare Access headers (`CF-Access-Client-Id` /
      `CF-Access-Client-Secret`) when Dify sits behind Zero Trust.
-5. **Stream transformation** — Dify's SSE events are parsed with
+5. **Stream transformation** - Dify's SSE events are parsed with
    `eventsource-parser` and re-emitted in the Vercel AI SDK v6 format:
    - `message` → `text-delta` chunks
    - First token of a new conversation → `data-chat-credentials` (JWT issuance)
    - `node_started` / `node_finished` → `data-node-status` (workflow step indicator)
+   - `node_finished` + title `"CREATE_VISIT"` → `data-visit-created` with `visitId`
+     parsed from the node's HTTP response body
    - `error` → forwarded as `error` event
 6. **The stream is closed** with `finish-step`, `finish`, and the `[DONE]`
    sentinel.
@@ -165,7 +204,7 @@ Browser ──POST /send-message──▶ medilive-chat-api ──SSE──▶ D
   (HS256, 24 h expiry) containing both IDs and signs it with `SERVER_SECRET`.
 - The widget receives it via `onData`, stores it, and attaches it to every
   subsequent request.
-- This keeps the frontend **stateless** with regard to Dify internals —
+- This keeps the frontend **stateless** with regard to Dify internals -
   conversation continuity is fully transparent.
 
 #### CORS
@@ -181,7 +220,7 @@ const CORS_ALLOW_ORIGINS = ["https://medilive.pl", "http://localhost:5173"];
 | Variable | Required | Purpose |
 |---|---|---|
 | `DIFY_API_URL` | yes | Base URL of the Dify instance (e.g. `https://dify.medilive.pl`). |
-| `DIFY_API_KEY` | fallback | Default API key — used if no workflow-specific key is found in KV. |
+| `DIFY_API_KEY` | fallback | Default API key - used if no workflow-specific key is found in KV. |
 | `SERVER_SECRET` | yes | HS256 secret for JWT signing/verification. Set as a Cloudflare **secret**. |
 | `CF_ACCESS_CLIENT_ID` | no | Cloudflare Access service token ID (when Dify is behind Zero Trust). |
 | `CF_ACCESS_CLIENT_SECRET` | no | Cloudflare Access service token secret. |
@@ -193,7 +232,7 @@ const CORS_ALLOW_ORIGINS = ["https://medilive.pl", "http://localhost:5173"];
 
 ---
 
-### 3. `medilive-utils-api` — Utility API Worker
+### 3. `medilive-utils-api` - Utility API Worker
 
 **Runtime:** Cloudflare Workers  
 **Key libraries:** Hono 4, Nodemailer 9, [smsapi.pl](https://smsapi.pl) client,
@@ -203,7 +242,7 @@ Zod
 
 A companion Worker that exposes **authenticated** endpoints for email sending,
 SMS reminders, and visit/appointment CRUD. It is not called by the chat widget
-directly — it serves external systems (clinic management tools, Dify workflows
+directly - it serves external systems (clinic management tools, Dify workflows
 via HTTP nodes, etc.).
 
 All routes are protected by API-key authentication (`Authorization: Bearer
@@ -214,7 +253,7 @@ All routes are protected by API-key authentication (`Authorization: Bearer
 
 #### Endpoints
 
-##### Email — `POST /api/v1/mail`
+##### Email - `POST /api/v1/mail`
 
 Sends a transactional email through **Amazon SES SMTP** (or any SMTP-compatible
 provider). The body accepts a structured content object (`title`, `body`,
@@ -229,25 +268,25 @@ provider). The body accepts a structured content object (`title`, `body`,
 | `SMTP_USER` | SMTP username. |
 | `SMTP_PASS` | SMTP password (set as a Cloudflare **secret**). |
 
-##### SMS — `POST /api/v1/sms`
+##### SMS - `POST /api/v1/sms`
 
 Sends an SMS reminder for a previously created visit using the **smsapi.pl**
 REST API. Includes a built-in deduplication guard: if another visit with the
 same phone number exists for this tenant within the last 24 hours, the SMS is
 skipped.
 
-**Required secret:** `SMSAPI_TOKEN` — API token for smsapi.pl.
+**Required secret:** `SMSAPI_TOKEN` - API token for smsapi.pl.
 
-##### Visits — `POST /api/v1/visits`
+##### Visits - `POST /api/v1/visits`
 
 Persists a visit record to **Cloudflare D1**. The body references:
-- `user-id` — end-user UUID,
-- `institution-id` — clinic/facility UUID,
-- `doctor-id` — doctor UUID,
-- `type` — visit type (free-form string),
-- `phone-number`, `email` — optional contact fields.
+- `user-id` - end-user UUID,
+- `institution-id` - clinic/facility UUID,
+- `doctor-id` - doctor UUID,
+- `type` - visit type (free-form string),
+- `phone-number`, `email` - optional contact fields.
 
-The `tenantId` is extracted from the API key's payload by the auth middleware —
+The `tenantId` is extracted from the API key's payload by the auth middleware -
 each key is bound to exactly one tenant.
 
 #### API Key System
@@ -259,10 +298,10 @@ each key is bound to exactly one tenant.
 | Expiry | 30 days from creation |
 | Refresh | Extends expiry by another 30 days (up to 1 year from creation) |
 | Revocation | Delete from KV |
-| Tenant scoping | Each key carries a `tenant_id` — downstream handlers can isolate data per tenant |
+| Tenant scoping | Each key carries a `tenant_id` - downstream handlers can isolate data per tenant |
 
 Keys are generated and managed via a [seed script](./medilive-utils-api/scripts/seed-novamed-apikey.ts)
-(reference implementation — adapt for each tenant).
+(reference implementation - adapt for each tenant).
 
 #### Database Migrations
 
@@ -270,9 +309,9 @@ Located in `medilive-utils-api/migrations/`:
 
 | Migration | Tables created |
 |---|---|
-| `0001_create_visits_table` | `visits` — appointment records with tenant isolation |
-| `0002_create_institutions_table` | `institutions` — clinic metadata |
-| `0003_create_doctors_table` | `doctors` — doctor metadata |
+| `0001_create_visits_table` | `visits` - appointment records with tenant isolation |
+| `0002_create_institutions_table` | `institutions` - clinic metadata |
+| `0003_create_doctors_table` | `doctors` - doctor metadata |
 
 #### Environment Variables & Secrets
 
@@ -339,18 +378,18 @@ npx wrangler secret put SMSAPI_TOKEN
 ### Run Locally
 
 ```bash
-# Terminal 1 — Vite dev server (http://localhost:5173)
+# Terminal 1 - Vite dev server (http://localhost:5173)
 cd medilive-chat-app && pnpm dev
 
-# Terminal 2 — Chat API Worker (http://localhost:8787)
+# Terminal 2 - Chat API Worker (http://localhost:8787)
 cd medilive-chat-api && pnpm dev
 
-# Terminal 3 — Utils API Worker (http://localhost:8788)
+# Terminal 3 - Utils API Worker (http://localhost:8788)
 cd medilive-utils-api && pnpm dev
 ```
 
 > The Workers use `wrangler dev` which runs locally on top of
-> [workerd](https://github.com/cloudflare/workerd) — no remote Cloudflare
+> [workerd](https://github.com/cloudflare/workerd) - no remote Cloudflare
 > deployment needed for development.
 
 ---
@@ -377,10 +416,10 @@ pnpm build    # outputs to dist/
 
 The `dist/` directory is a static SPA. Deploy to any static host:
 
-- **Cloudflare Pages** — connect the repo, set build command `pnpm build` and
+- **Cloudflare Pages** - connect the repo, set build command `pnpm build` and
   output directory `dist`.
-- **Vercel / Netlify** — same approach.
-- **Any CDN / object storage** — just upload the contents of `dist/`.
+- **Vercel / Netlify** - same approach.
+- **Any CDN / object storage** - just upload the contents of `dist/`.
 
 Set `VITE_WORKER_API_URL` and `VITE_DIFY_WORKFLOW_ID` in the hosting platform's
 environment variables or at build time.

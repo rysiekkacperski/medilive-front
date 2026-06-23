@@ -27,7 +27,7 @@ export const CreateVisitRequestSchema = z.object({
   'user-id': z.string().min(1, 'user-id is required'),
   'institution-id': z.string().min(1, 'institution-id is required'),
   'doctor-id': z.string().min(1, 'doctor-id is required'),
-  'phone-number': z.string().min(6, 'phone-number is required'),
+  'phone-number': z.string().optional(),
   email: z.string().email('Invalid email address').optional(),
   'type': z.string().min(1, 'type is required'),
 });
