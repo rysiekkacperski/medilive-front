@@ -93,6 +93,7 @@ export interface Env {
   DIFY_API_KEY: string;
   DIFY_API_URL: string;
   KEYS_STORE: KVNamespace;
+  TURNSTILE_SECRET_KEY?: string;
   CF_ACCESS_CLIENT_ID?: string;
   CF_ACCESS_CLIENT_SECRET?: string;
 }
@@ -117,4 +118,5 @@ export const SendMessageRequestSchema = z.object({
   messages: z.array(ChatMessageSchema).min(1),
   jwt: z.string().nullable().optional(),
   dify_workflow_id: z.string().min(1, 'Missing workflow identifier'),
+  turnstileToken: z.string().nullable().optional(),
 });

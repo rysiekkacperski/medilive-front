@@ -5,9 +5,10 @@ import { WELCOME_SCREEN } from "@/lib/constants"
 interface WelcomeScreenProps {
   botName: string
   avatarUrl?: string
+  turnstileSlot?: React.ReactNode
 }
 
-export function WelcomeScreen({ botName, avatarUrl }: WelcomeScreenProps) {
+export function WelcomeScreen({ botName, avatarUrl, turnstileSlot }: WelcomeScreenProps) {
   return (
     <div
       className={cn(
@@ -37,7 +38,7 @@ export function WelcomeScreen({ botName, avatarUrl }: WelcomeScreenProps) {
         {WELCOME_SCREEN.subtitle}
       </p>
 
-      <Loader variant="pulse-dot" size="md" />
+      {turnstileSlot ?? <Loader variant="pulse-dot" size="md" />}
     </div>
   )
 }

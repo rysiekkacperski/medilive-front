@@ -33,6 +33,7 @@ export function useChatWidget(apiEndpoint: string) {
   const [hasStarted, setHasStarted] = useState(false)
   const [nodeStatus, setNodeStatus] = useState<string | null>(null)
   const [visitId, setVisitId] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
 
   const chat = useChat({
     transport: new DefaultChatTransport({
@@ -41,10 +42,16 @@ export function useChatWidget(apiEndpoint: string) {
         const currentJwt = getStoredJwt()
         return currentJwt ? { Authorization: currentJwt } : {}
       },
-      body: () => ({
-        jwt: getStoredJwt(),
-        dify_workflow_id: import.meta.env.VITE_DIFY_WORKFLOW_ID,
-      }),
+      body: () => {
+        const body: Record<string, unknown> = {
+          jwt: getStoredJwt(),
+          dify_workflow_id: import.meta.env.VITE_DIFY_WORKFLOW_ID,
+        }
+        if (turnstileToken) {
+          body.turnstileToken = turnstileToken
+        }
+        return body
+      },
     }),
     onData: (data) => {
       const d = data as Record<string, unknown>
@@ -94,6 +101,8 @@ export function useChatWidget(apiEndpoint: string) {
     hasSentFirstMessage,
     nodeStatus,
     visitId,
+    turnstileToken,
+    setTurnstileToken,
     startChat,
     newChat,
   }

@@ -154,6 +154,7 @@ The card uses a CSS `@keyframes card-enter` animation (fade-in + slide-up,
 |---|---|---|
 | `VITE_WORKER_API_URL` | yes | Base URL of the **chat-api** Worker (e.g. `https://chat.medilive.pl`). |
 | `VITE_DIFY_WORKFLOW_ID` | yes | Dify workflow/app ID for this tenant. |
+| `VITE_TURNSTILE_SITEKEY` | no | Cloudflare Turnstile sitekey for bot protection. When set, a challenge is required before the first message is sent. |
 
 ---
 
@@ -215,6 +216,24 @@ Allowed origins are configured statically:
 const CORS_ALLOW_ORIGINS = ["https://medilive.pl", "http://localhost:5173"];
 ```
 
+#### Turnstile Bot Protection
+
+When `TURNSTILE_SECRET_KEY` is configured, the chat-api **requires** a valid
+Turnstile token on every request:
+
+- The frontend renders an **invisible** widget (`react-turnstile` with
+  `appearance="execute"`). On submit, `turnstile.execute()` is called — trusted
+  users resolve automatically in the background; suspicious users see a visible
+  challenge.
+- The obtained token is sent in the request body (`turnstileToken`).
+- The Worker POSTs the token to
+  `https://challenges.cloudflare.com/turnstile/v0/siteverify`. If the token is
+  **missing or invalid**, the request is rejected with `403 Forbidden` **before**
+  any Dify tokens are consumed.
+
+Turnstile is optional — when `TURNSTILE_SECRET_KEY` is absent (e.g. local
+development), the Worker skips validation entirely and all requests are accepted.
+
 #### Environment Variables & Secrets
 
 | Variable | Required | Purpose |
@@ -222,6 +241,7 @@ const CORS_ALLOW_ORIGINS = ["https://medilive.pl", "http://localhost:5173"];
 | `DIFY_API_URL` | yes | Base URL of the Dify instance (e.g. `https://dify.medilive.pl`). |
 | `DIFY_API_KEY` | fallback | Default API key - used if no workflow-specific key is found in KV. |
 | `SERVER_SECRET` | yes | HS256 secret for JWT signing/verification. Set as a Cloudflare **secret**. |
+| `TURNSTILE_SECRET_KEY` | no | Cloudflare Turnstile secret for server-side token validation. |
 | `CF_ACCESS_CLIENT_ID` | no | Cloudflare Access service token ID (when Dify is behind Zero Trust). |
 | `CF_ACCESS_CLIENT_SECRET` | no | Cloudflare Access service token secret. |
 

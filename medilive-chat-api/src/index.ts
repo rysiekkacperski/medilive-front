@@ -53,11 +53,51 @@ function uuidv4(): string {
  * Expects JSON body: { messages, jwt?, dify_workflow_id }
  * Returns a Vercel AI SDK v6-compatible SSE stream.
  */
+/**
+ * Validates a Turnstile token against Cloudflare's siteverify endpoint.
+ * Returns true if the token is valid, false otherwise.
+ * Skips validation if TURNSTILE_SECRET_KEY is not configured (graceful degradation).
+ */
+async function validateTurnstile(token: string, secret: string): Promise<boolean> {
+  const formData = new FormData();
+  formData.append("secret", secret);
+  formData.append("response", token);
+
+  try {
+    const res = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      { method: "POST", body: formData },
+    );
+    const data = (await res.json()) as { success: boolean };
+    return data.success === true;
+  } catch {
+    console.error("Turnstile siteverify request failed");
+    return false;
+  }
+}
+
 app.post("/send-message", zValidator("json", SendMessageRequestSchema), async (c) => {
-  const { messages, jwt, dify_workflow_id } = c.req.valid("json");
+  const { messages, jwt, dify_workflow_id, turnstileToken } = c.req.valid("json");
 
   // Validate environment
-  const { SERVER_SECRET, DIFY_API_KEY, DIFY_API_URL, KEYS_STORE, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET } = c.env;
+  const { SERVER_SECRET, DIFY_API_KEY, DIFY_API_URL, KEYS_STORE, TURNSTILE_SECRET_KEY, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET } = c.env;
+
+  // ── Turnstile validation (mandatory when secret is configured) ──
+  if (TURNSTILE_SECRET_KEY) {
+    if (!turnstileToken) {
+      return c.json(
+        { error: "Turnstile token is required." },
+        { status: 403 },
+      );
+    }
+    const isValid = await validateTurnstile(turnstileToken, TURNSTILE_SECRET_KEY);
+    if (!isValid) {
+      return c.json(
+        { error: "Turnstile verification failed." },
+        { status: 403 },
+      );
+    }
+  }
 
   if (!SERVER_SECRET || !DIFY_API_URL) {
     return c.json({ error: "Server configuration error." }, { status: 500 });

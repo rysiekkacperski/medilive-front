@@ -14,6 +14,7 @@ interface ChatInputProps {
   onSubmit: () => void
   onStop: () => void
   isStreaming: boolean
+  disabled?: boolean
   placeholder?: string
 }
 
@@ -23,6 +24,7 @@ export function ChatInput({
   onSubmit,
   onStop,
   isStreaming,
+  disabled = false,
   placeholder,
 }: ChatInputProps) {
   const handleSubmit = () => {
@@ -31,13 +33,15 @@ export function ChatInput({
     }
   }
 
+  const inputDisabled = disabled || isStreaming
+
   return (
     <div className="shrink-0 px-3 py-2">
       <PromptInput
         value={value}
         onValueChange={onValueChange}
         onSubmit={handleSubmit}
-        disabled={isStreaming}
+        disabled={inputDisabled}
         className="p-1.5 rounded-xl"
       >
         <PromptInputTextarea
@@ -67,7 +71,7 @@ export function ChatInput({
                 size="icon"
                 className="size-7"
                 onClick={handleSubmit}
-                disabled={!value.trim()}
+                disabled={inputDisabled || !value.trim()}
                 aria-label={CHAT_INPUT.sendTooltip}
               >
                 <ArrowUp className="size-4" />

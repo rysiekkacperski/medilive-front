@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useCallback } from "react"
+import Turnstile from "react-turnstile"
+import type { BoundTurnstileObject } from "react-turnstile"
 
 import {
   ChatContainerRoot,
@@ -52,17 +54,51 @@ export function ChatWidget({
     stop,
     error,
     regenerate,
+    turnstileToken,
+    setTurnstileToken,
   } = useChatWidget(apiEndpoint)
 
   const isStreaming = status === "submitted" || status === "streaming"
 
+  // Turnstile
+  const turnstileBoundRef = useRef<BoundTurnstileObject | null>(null)
+  const pendingMessageRef = useRef<string | null>(null)
+  const [turnstileResolving, setTurnstileResolving] = useState(false)
+
+  const sitekey = import.meta.env.VITE_TURNSTILE_SITEKEY as string | undefined
+
+  const sendQueuedMessage = useCallback(
+    (text: string) => {
+      startChat(text)
+    },
+    [startChat],
+  )
+
+  // ── Submit handlers ──
+
   const handleSubmit = () => {
     if (!input.trim()) return
+
+    if (sitekey && !turnstileToken && turnstileBoundRef.current) {
+      pendingMessageRef.current = input.trim()
+      setTurnstileResolving(true)
+      turnstileBoundRef.current.execute()
+      setInput("")
+      return
+    }
+
     startChat(input.trim())
     setInput("")
   }
 
   const handleSuggestionClick = (suggestion: string) => {
+    if (sitekey && !turnstileToken && turnstileBoundRef.current) {
+      pendingMessageRef.current = suggestion
+      setTurnstileResolving(true)
+      turnstileBoundRef.current.execute()
+      return
+    }
+
     setInput(suggestion)
     startChat(suggestion)
     setInput("")
@@ -78,7 +114,38 @@ export function ChatWidget({
       <ChatHeader botName={botName} avatarUrl={botAvatarUrl} onNewChat={newChat} />
 
       {!hasSentFirstMessage ? (
-        <WelcomeScreen botName={botName} avatarUrl={botAvatarUrl} />
+        <WelcomeScreen
+          botName={botName}
+          avatarUrl={botAvatarUrl}
+          turnstileSlot={
+            sitekey && (
+              <Turnstile
+                sitekey={sitekey}
+                appearance="execute"
+                execution="render"
+                onLoad={(_widgetId, bound) => {
+                  turnstileBoundRef.current = bound
+                }}
+                onVerify={(token) => {
+                  setTurnstileToken(token)
+                  setTurnstileResolving(false)
+                  const queued = pendingMessageRef.current
+                  pendingMessageRef.current = null
+                  if (queued) {
+                    sendQueuedMessage(queued)
+                  }
+                }}
+                onError={() => {
+                  setTurnstileResolving(false)
+                  pendingMessageRef.current = null
+                }}
+                onExpire={() => {
+                  setTurnstileToken(null)
+                }}
+              />
+            )
+          }
+        />
       ) : (
         <ChatContainerRoot className="min-h-0 flex-1">
           <ChatContainerContent>
@@ -124,10 +191,13 @@ export function ChatWidget({
         onSubmit={handleSubmit}
         onStop={stop}
         isStreaming={isStreaming}
+        disabled={turnstileResolving}
         placeholder={
-          isStreaming
-            ? CHAT_WIDGET.inputStreamingPlaceholder
-            : CHAT_WIDGET.inputPlaceholder
+          turnstileResolving
+            ? "Weryfikacja..."
+            : isStreaming
+              ? CHAT_WIDGET.inputStreamingPlaceholder
+              : CHAT_WIDGET.inputPlaceholder
         }
       />
 
