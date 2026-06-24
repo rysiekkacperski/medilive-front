@@ -30,7 +30,6 @@ function clearJwt() {
 }
 
 export function useChatWidget(apiEndpoint: string) {
-  const [jwt, setJwt] = useState<string | null>(getStoredJwt)
   const [hasStarted, setHasStarted] = useState(false)
   const [nodeStatus, setNodeStatus] = useState<string | null>(null)
   const [visitId, setVisitId] = useState<string | null>(null)
@@ -43,15 +42,17 @@ export function useChatWidget(apiEndpoint: string) {
         return currentJwt ? { Authorization: currentJwt } : {}
       },
       body: () => ({
-        jwt: jwt,
+        jwt: getStoredJwt(),
         dify_workflow_id: import.meta.env.VITE_DIFY_WORKFLOW_ID,
       }),
     }),
     onData: (data) => {
       const d = data as Record<string, unknown>
-      if (d?.type === "chat-credentials" && typeof d.jwt === "string") {
-        setJwt(d.jwt)
-        storeJwt(d.jwt)
+      if (d?.type === "data-chat-credentials") {
+        const jwtFromData = (d.data as { jwt?: string })?.jwt
+        if (jwtFromData) {
+          storeJwt(jwtFromData)
+        }
       }
       if (d?.type === "data-node-status") {
         const rawTitle = (d.data as { title: string | null })?.title
@@ -62,8 +63,9 @@ export function useChatWidget(apiEndpoint: string) {
           setNodeStatus(null)
         }
       }
-      if (d?.type === "visit-created" && typeof d.visitId === "string") {
-        setVisitId(d.visitId)
+      if (d?.type === "data-visit-created") {
+        const visitIdFromData = (d.data as { visitId?: string })?.visitId
+        if (visitIdFromData) setVisitId(visitIdFromData)
       }
     },
   })
@@ -80,7 +82,6 @@ export function useChatWidget(apiEndpoint: string) {
   const newChat = () => {
     stop()
     clearJwt()
-    setJwt(null)
     setNodeStatus(null)
     setVisitId(null)
     setMessages([])
