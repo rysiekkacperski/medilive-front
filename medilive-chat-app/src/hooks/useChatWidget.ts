@@ -1,9 +1,13 @@
 import { useChat } from "@ai-sdk/react"
 import { DefaultChatTransport } from "ai"
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { NODE_TITLE_MAP } from "@/lib/constants"
 
 const STORAGE_KEY = "medilive-chat-credentials"
+
+// Module-level storage for turnstile token — must be available synchronously
+// inside the body() closure, which fires before React commits state updates.
+let turnstileTokenSync: string | null = null
 
 function getStoredJwt(): string | null {
   try {
@@ -33,7 +37,14 @@ export function useChatWidget(apiEndpoint: string) {
   const [hasStarted, setHasStarted] = useState(false)
   const [nodeStatus, setNodeStatus] = useState<string | null>(null)
   const [visitId, setVisitId] = useState<string | null>(null)
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileTokenState] = useState<string | null>(null)
+
+  // Sync setter: updates both the module-level variable (for synchronous
+  // read in body()) and React state (for UI reactivity).
+  const setTurnstileToken = useCallback((token: string | null) => {
+    turnstileTokenSync = token
+    setTurnstileTokenState(token)
+  }, [])
 
   const chat = useChat({
     transport: new DefaultChatTransport({
@@ -47,8 +58,8 @@ export function useChatWidget(apiEndpoint: string) {
           jwt: getStoredJwt(),
           dify_workflow_id: import.meta.env.VITE_DIFY_WORKFLOW_ID,
         }
-        if (turnstileToken) {
-          body.turnstileToken = turnstileToken
+        if (turnstileTokenSync) {
+          body.turnstileToken = turnstileTokenSync
         }
         return body
       },

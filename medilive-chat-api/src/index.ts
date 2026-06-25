@@ -28,6 +28,81 @@ app.use(
   }),
 );
 
+// ── Rate limiting constants ──
+const DAILY_LIMIT = 50;
+const DAILY_TTL = 86400; // 24 hours in seconds
+const RATE_LIMIT_PREFIX = "rl:";
+
+/**
+ * Check rate limits for the given IP address.
+ * Layer 1: Burst protection via RATE_LIMITER binding (5 req/10s)
+ * Layer 2: Daily cap via RATE_LIMIT_STORE KV (50/day)
+ *
+ * Returns null if allowed, or a 429 Response if limit exceeded.
+ */
+async function checkRateLimit(
+  ip: string,
+  env: Env,
+): Promise<{ limited: true; response: Response } | { limited: false }> {
+  // Layer 1: Burst protection (binding-based, per-Cloudflare-location)
+  const { success: burstOk } = await env.RATE_LIMITER.limit({ key: ip });
+  if (!burstOk) {
+    return {
+      limited: true,
+      response: new Response(
+        JSON.stringify({
+          error:
+            "Przekroczono limit zapytań. Spróbuj ponownie za chwilę.",
+        }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": "10",
+          },
+        },
+      ),
+    };
+  }
+
+  // Layer 2: Daily cap (KV-based, global across all locations)
+  try {
+    const countStr = await env.RATE_LIMIT_STORE.get(RATE_LIMIT_PREFIX + ip);
+    const currentCount = countStr ? parseInt(countStr, 10) : 0;
+
+    if (currentCount >= DAILY_LIMIT) {
+      return {
+        limited: true,
+        response: new Response(
+          JSON.stringify({
+            error:
+              "Przekroczono dzienny limit zapytań (50). Spróbuj ponownie jutro.",
+          }),
+          {
+            status: 429,
+            headers: {
+              "Content-Type": "application/json",
+              "Retry-After": "86400",
+            },
+          },
+        ),
+      };
+    }
+
+    // Increment the counter with a 24h TTL (resets daily)
+    await env.RATE_LIMIT_STORE.put(
+      RATE_LIMIT_PREFIX + ip,
+      String(currentCount + 1),
+      { expirationTtl: DAILY_TTL },
+    );
+  } catch {
+    // KV unavailable — fail open (allow the request)
+    console.error("Rate limit KV store unavailable, allowing request");
+  }
+
+  return { limited: false };
+}
+
 /**
  * Generate a simple UUID v4 using the Web Crypto API.
  */
@@ -80,10 +155,41 @@ app.post("/send-message", zValidator("json", SendMessageRequestSchema), async (c
   const { messages, jwt, dify_workflow_id, turnstileToken } = c.req.valid("json");
 
   // Validate environment
-  const { SERVER_SECRET, DIFY_API_KEY, DIFY_API_URL, KEYS_STORE, TURNSTILE_SECRET_KEY, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET } = c.env;
+  const { SERVER_SECRET, DIFY_API_KEY, DIFY_API_URL, KEYS_STORE, RATE_LIMIT_STORE, RATE_LIMITER, TURNSTILE_SECRET_KEY, CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET } = c.env;
 
-  // ── Turnstile validation (mandatory when secret is configured) ──
-  if (TURNSTILE_SECRET_KEY) {
+  if (!SERVER_SECRET || !DIFY_API_URL) {
+    return c.json({ error: "Server configuration error." }, { status: 500 });
+  }
+
+  // ── Rate limiting (cheapest check first, before Turnstile/JWT) ──
+  const clientIp =
+    c.req.header("CF-Connecting-IP") ||
+    c.req.header("X-Forwarded-For")?.split(",")[0]?.trim() ||
+    "unknown";
+  const rateLimitResult = await checkRateLimit(clientIp, c.env);
+  if (rateLimitResult.limited) {
+    return rateLimitResult.response;
+  }
+
+  // ── JWT verification (must happen BEFORE Turnstile) ──
+  // A valid JWT (with both conversation_id and user_id) proves the user
+  // already passed Turnstile on their first message — skip re-verification.
+  let conversationId: string | undefined;
+  let storedUserId: string | undefined;
+  let hasValidJwt = false;
+
+  if (jwt) {
+    const payload = await verifyJwt(jwt, SERVER_SECRET);
+    if (payload?.conversation_id && payload?.user_id) {
+      conversationId = payload.conversation_id as string;
+      storedUserId = payload.user_id as string;
+      hasValidJwt = true;
+    }
+    // Invalid/expired or incomplete JWT is silently ignored — falls through to Turnstile
+  }
+
+  // ── Turnstile validation (only when no valid JWT exists) ──
+  if (!hasValidJwt && TURNSTILE_SECRET_KEY) {
     if (!turnstileToken) {
       return c.json(
         { error: "Turnstile token is required." },
@@ -97,10 +203,6 @@ app.post("/send-message", zValidator("json", SendMessageRequestSchema), async (c
         { status: 403 },
       );
     }
-  }
-
-  if (!SERVER_SECRET || !DIFY_API_URL) {
-    return c.json({ error: "Server configuration error." }, { status: 500 });
   }
 
   // Resolve API key: KV first, then env fallback
@@ -123,20 +225,6 @@ app.post("/send-message", zValidator("json", SendMessageRequestSchema), async (c
       { error: "Server configuration error: no API key available." },
       { status: 500 },
     );
-  }
-
-  // Verify JWT (if provided) — extract conversation_id and user_id
-  let conversationId: string | undefined;
-  let storedUserId: string | undefined;
-  if (jwt) {
-    const payload = await verifyJwt(jwt, SERVER_SECRET);
-    if (payload?.conversation_id) {
-      conversationId = payload.conversation_id as string;
-    }
-    if (payload?.user_id) {
-      storedUserId = payload.user_id as string;
-    }
-    // Invalid/expired JWT is silently ignored — starts a new conversation
   }
 
   // Generate or reuse user_id — worker is the source of truth
@@ -346,7 +434,9 @@ app.post("/send-message", zValidator("json", SendMessageRequestSchema), async (c
       await sendFinish();
       await writer.close();
     }
-  })();
+  })().catch((err) => {
+    console.error("Stream error (client disconnected):", err);
+  });
 
   // Return the readable end immediately — the async block above fills it
   return new Response(readable, {

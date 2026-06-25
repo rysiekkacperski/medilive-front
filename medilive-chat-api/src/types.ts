@@ -93,6 +93,8 @@ export interface Env {
   DIFY_API_KEY: string;
   DIFY_API_URL: string;
   KEYS_STORE: KVNamespace;
+  RATE_LIMIT_STORE: KVNamespace;
+  RATE_LIMITER: RateLimit;
   TURNSTILE_SECRET_KEY?: string;
   CF_ACCESS_CLIENT_ID?: string;
   CF_ACCESS_CLIENT_SECRET?: string;

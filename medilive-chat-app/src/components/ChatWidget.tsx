@@ -121,8 +121,7 @@ export function ChatWidget({
             sitekey && (
               <Turnstile
                 sitekey={sitekey}
-                appearance="execute"
-                execution="render"
+                size="invisible"
                 onLoad={(_widgetId, bound) => {
                   turnstileBoundRef.current = bound
                 }}
@@ -191,7 +190,7 @@ export function ChatWidget({
         onSubmit={handleSubmit}
         onStop={stop}
         isStreaming={isStreaming}
-        disabled={turnstileResolving}
+        isVerifying={turnstileResolving}
         placeholder={
           turnstileResolving
             ? "Weryfikacja..."
