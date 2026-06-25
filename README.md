@@ -17,6 +17,23 @@ Every clinic gets its own Dify workflow, branding, and optionally its own set of
 utility endpoints - the platform is designed so that new tenants can be onboarded
 with only configuration and zero code changes.
 
+The Dify chat workflow powering the platform handles the following
+capabilities out of the box:
+
+- **Prompt safety** — detects malicious inputs (anti-prompt-injection,
+  anti-jailbreak, anti-code-injection, bad URLs & PII)
+- **Emergency detection** — identifies emergency cases and escalates
+  appropriately
+- **Visit scheduling** — creates and books medical appointments
+- **Small talk** — handles casual conversation naturally
+- **Triage & doctor matching** — evaluates symptoms and matches patients
+  to the right doctor
+- **Offer presentation** — presents clinic service offers
+- **Staff presentation** — introduces clinic personnel
+- **Examination preparation** — helps patients prepare for medical
+  examinations
+- **Prevention methods** — presents preventive care recommendations
+
 ---
 
 ## Architecture Diagram
