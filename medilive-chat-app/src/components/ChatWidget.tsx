@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useCallback } from "react"
-import Turnstile from "react-turnstile"
+import { Turnstile } from "react-turnstile"
 import type { BoundTurnstileObject } from "react-turnstile"
 
 import {
