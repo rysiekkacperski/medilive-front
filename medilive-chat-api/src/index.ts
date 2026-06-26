@@ -139,7 +139,7 @@ app.post("/send-message", zValidator("json", SendMessageRequestSchema), async (c
       );
     }
 
-    // Stream Dify → client via SSE
+    // Stream Dify to client via SSE
     const { readable, writable } = new TransformStream();
     streamDifyToClient(
       difyResponse,
