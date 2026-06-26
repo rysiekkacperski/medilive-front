@@ -28,9 +28,6 @@ describe("medilive-chat-api worker", () => {
   });
 
   it("rate limiting: burst layer check runs (binding present)", { timeout: 10000 }, async () => {
-      // Verify the RATE_LIMITER binding exists and the /send-message endpoint
-      // runs the rate limit check without crashing. The actual 429 behavior
-      // depends on the live Cloudflare Rate Limiting infrastructure.
       const body = JSON.stringify({
         messages: [{ id: "1", role: "user", content: "Hello" }],
         dify_workflow_id: "test-workflow",

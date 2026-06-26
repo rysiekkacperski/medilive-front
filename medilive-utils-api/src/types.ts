@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { StatusCode } from 'hono/utils/http-status';
 
-// ── Email Content Schema (the structured body for templated emails) ──
+// Email Content Schema (the structured body for templated emails) 
 export const EmailContentSchema = z.object({
   title: z.string().min(1, 'Email title is required'),
   body: z.string().min(1, 'Email body is required'),
@@ -11,7 +11,7 @@ export const EmailContentSchema = z.object({
 
 export type EmailContent = z.infer<typeof EmailContentSchema>;
 
-// ── API Request Schema ──
+// API Request Schema 
 export const SendMailRequestSchema = z.object({
   to: z.string().email('Invalid recipient email address'),
   senderEmail: z.string().email('Invalid sender email address'),
@@ -22,7 +22,7 @@ export const SendMailRequestSchema = z.object({
 
 export type SendMailRequest = z.infer<typeof SendMailRequestSchema>;
 
-// ── Visit Request Schema ──
+// Visit Request Schema 
 export const CreateVisitRequestSchema = z.object({
   'user-id': z.string().min(1, 'user-id is required'),
   'institution-id': z.string().min(1, 'institution-id is required'),
@@ -34,14 +34,14 @@ export const CreateVisitRequestSchema = z.object({
 
 export type CreateVisitRequest = z.infer<typeof CreateVisitRequestSchema>;
 
-// ── SMS Send Request Schema ──
+// SMS Send Request Schema 
 export const SmsSendRequestSchema = z.object({
   'visit-id': z.string().min(1, 'visit-id is required'),
 });
 
 export type SmsSendRequest = z.infer<typeof SmsSendRequestSchema>;
 
-// ── API Response Types ──
+// API Response Types 
 export interface SendMailSuccessResponse {
   success: true;
   messageId: string;
@@ -53,7 +53,7 @@ export interface SendMailErrorResponse {
   code?: string;
 }
 
-// ── API Key Types ──
+// API Key Types 
 export interface ApiKeyPayload {
   key: string;
   tenant_id: string;
@@ -62,7 +62,7 @@ export interface ApiKeyPayload {
   refreshable_until: number; // 1 year from creation
 }
 
-// ── Environment Bindings ──
+// Environment Bindings 
 export interface Env {
   KEYS_STORE: KVNamespace;
   DB: D1Database;
@@ -74,7 +74,7 @@ export interface Env {
   SMTP_PASS: string;
 }
 
-// ── Hono Variables (set by middleware) ──
+// Hono Variables (set by middleware) 
 export interface Variables {
   apiKey: string;
   tenantId: string;

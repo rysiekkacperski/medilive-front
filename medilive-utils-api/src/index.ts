@@ -7,12 +7,12 @@ import { mailRoutes } from './mail/routes';
 import { visitRoutes } from './visit/routes';
 import { smsRoutes } from './sms/routes';
 
-// ── CORS configuration ──
+//  CORS configuration 
 const CORS_ALLOW_ORIGINS = ['https://medilive.pl', 'http://localhost:5173'];
 
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-// ── Global Middleware ──
+//  Global Middleware 
 app.use('*', logger());
 app.use('*', prettyJSON());
 app.use(
@@ -25,17 +25,17 @@ app.use(
   }),
 );
 
-// ── Health check (public) ──
+//  Health check (public) 
 app.get('/api/v1/health', (c) => {
   return c.json({ status: 'ok', service: 'medilive-utils-api', timestamp: Date.now() });
 });
 
-// ── Mount routes ──
+//  Mount routes 
 app.route('/api/v1/mail', mailRoutes);
 app.route('/api/v1/visits', visitRoutes);
 app.route('/api/v1/sms', smsRoutes);
 
-// ── 404 catch-all ──
+//  404 catch-all 
 app.notFound((c) => {
   return c.json(
     { success: false, error: `Not Found: ${c.req.method} ${c.req.path}` },
@@ -43,7 +43,7 @@ app.notFound((c) => {
   );
 });
 
-// ── Global error handler ──
+//  Global error handler 
 app.onError((err, c) => {
   console.error('Unhandled error:', err);
   return c.json(

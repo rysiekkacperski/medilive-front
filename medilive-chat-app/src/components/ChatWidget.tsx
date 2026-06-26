@@ -74,7 +74,7 @@ export function ChatWidget({
     [startChat],
   )
 
-  // ── Submit handlers ──
+  // Submit handlers
 
   const handleSubmit = () => {
     if (!input.trim()) return

@@ -56,7 +56,7 @@ Tailwind CSS 4
 #### Concept
 
 The widget is a single `<ChatWidget>` component that can be dropped into any
-React host application. It handles the full messaging lifecycle:
+React host application or shared as iFrame. It handles the full messaging lifecycle:
 
 1. User types a question → sent to the **chat-api** Worker via
    `DefaultChatTransport` (Vercel AI SDK v6 data-stream protocol).
@@ -70,15 +70,6 @@ React host application. It handles the full messaging lifecycle:
    fresh.
 
 #### White-Label / Multi-Tenant Design
-
-| Configuration point | How it works |
-|---|---|
-| `VITE_WORKER_API_URL` | Points to the **chat-api** Worker (per environment). |
-| `VITE_DIFY_WORKFLOW_ID` | Sent in the POST body - tells the Worker which Dify workflow to call. |
-| `<ChatWidget botName>` | Display name shown in the header. |
-| `<ChatWidget botAvatarUrl>` | Avatar image (clinic logo or doctor photo). |
-| `<ChatWidget poweredByLogoSrc>` | Logo rendered in the "Powered by …" footer. |
-| Background / color scheme | Override via Tailwind CSS classes or CSS custom properties. |
 
 **Onboarding a new clinic** means:
 - Creating a new Dify workflow,
@@ -112,59 +103,6 @@ App.tsx
 State is driven by `useChatWidget()` (custom hook wrapping `useChat` from
 `@ai-sdk/react`):
 
-```ts
-const chat = useChat({
-  transport: new DefaultChatTransport({
-    api: apiEndpoint,
-    headers: () => jwt ? { Authorization: jwt } : {},
-    body: () => ({ jwt, dify_workflow_id: import.meta.env.VITE_DIFY_WORKFLOW_ID }),
-  }),
-  onData: (data) => {
-    // detect chat-credentials → persist JWT
-    // detect data-node-status → show workflow step indicator
-    //  - Maps Dify node titles through NODE_TITLE_MAP (PL localized labels)
-    //  - Always uppercased (e.g. "CREATE_VISIT" → "TWORZE WIZYTE")
-    // detect visit-created → set visitId → render animated visit card
-  },
-})
-```
-
-##### Node Title Mapping
-
-Raw Dify node titles are translated to user-facing Polish labels via
-`NODE_TITLE_MAP` in `constants.ts`. All labels are displayed in **uppercase**:
-
-```ts
-export const NODE_TITLE_MAP: Record<string, string> = {
-  CREATE_VISIT: "Tworze wizyte",
-  // ... add more as new workflow nodes are introduced
-}
-```
-
-If a node title is not in the map, the raw title is shown uppercased as-is.
-
-##### Visit Card
-
-When the Dify workflow creates a visit (`node_finished` with title
-`CREATE_VISIT`), the middleware forwards the `visitId` to the frontend via a
-custom `data-visit-created` SSE event. `useChatWidget` stores it in state.
-
-Once streaming finishes, `MessageList` renders an animated card below the
-last assistant message:
-
-```
-┌─────────────────────────────────────────────┐
-│  →  Kliknij, aby umowic wizyte              │
-└─────────────────────────────────────────────┘
-```
-
-Clicking the card navigates to `/wizyty/{visitId}` via `react-router-dom`
-(client-side, no page reload). The `VisitPage` component displays a
-confirmation: "Wizyta o identyfikatorze {id} zostala zarejestrowana."
-
-The card uses a CSS `@keyframes card-enter` animation (fade-in + slide-up,
-`0.4s ease-out`).
-
 #### Environment Variables
 
 | Variable | Required | Purpose |
@@ -187,10 +125,6 @@ with Dify. It receives a chat request from the widget, resolves the correct Dify
 API key, forwards the request, and transforms Dify's SSE stream into the Vercel
 AI SDK v6 **Data Stream Protocol** that the frontend understands.
 
-```
-Browser ──POST /send-message──▶ medilive-chat-api ──SSE──▶ Dify
-         ◀── data stream ────                    ◀── SSE ──
-```
 
 #### Request Flow
 
@@ -227,11 +161,7 @@ Browser ──POST /send-message──▶ medilive-chat-api ──SSE──▶ D
 
 #### CORS
 
-Allowed origins are configured statically:
-
-```ts
-const CORS_ALLOW_ORIGINS = ["https://medilive.pl", "http://localhost:5173"];
-```
+Allowed origins are configured statically
 
 #### Turnstile Bot Protection
 
@@ -251,10 +181,43 @@ Turnstile token on every request:
 Turnstile is optional — when `TURNSTILE_SECRET_KEY` is absent (e.g. local
 development), the Worker skips validation entirely and all requests are accepted.
 
+#### Rate Limiting
+
+The Worker enforces a **two-layer rate limiting** strategy on the `/send-message`
+endpoint, keyed by client IP (`CF-Connecting-IP`):
+
+| Layer | Mechanism | Limit | Window | Scope |
+|---|---|---|---|---|
+| 1 — Burst | `RATE_LIMITER` binding ([Cloudflare Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/rate-limit/)) | 5 requests | 10 seconds | Per Cloudflare edge location |
+| 2 — Daily | `RATE_LIMIT_STORE` KV namespace | 50 requests | 24 hours | Global (across all locations) |
+
+When either limit is exceeded, the Worker responds with `429 Too Many Requests`
+and a `Retry-After` header (10 s for burst, 86400 s for daily).
+
+**Fail-open:** If the KV backing `RATE_LIMIT_STORE` is temporarily unavailable,
+the daily cap is silently skipped — real users are never blocked by
+infrastructure issues.
+
+**Configuration** (in `wrangler.jsonc`):
+
+```jsonc
+"ratelimits": [
+  {
+    "name": "RATE_LIMITER",
+    "namespace_id": "1001",
+    "simple": { "limit": 5, "period": 10 }
+  }
+],
+"kv_namespaces": [
+  // … KEYS_STORE …
+  { "binding": "RATE_LIMIT_STORE", "id": "<your-kv-id>" }
+]
+```
+
 #### Environment Variables & Secrets
 
 | Variable | Required | Purpose |
-|---|---|---|
+|---|---|---|---|
 | `DIFY_API_URL` | yes | Base URL of the Dify instance (e.g. `https://dify.medilive.pl`). |
 | `DIFY_API_KEY` | fallback | Default API key - used if no workflow-specific key is found in KV. |
 | `SERVER_SECRET` | yes | HS256 secret for JWT signing/verification. Set as a Cloudflare **secret**. |

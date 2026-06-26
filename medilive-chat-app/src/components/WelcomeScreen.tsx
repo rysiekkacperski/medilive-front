@@ -1,5 +1,4 @@
 import { cn } from "@/lib/utils"
-import { Loader } from "@/components/ui/loader"
 import { WELCOME_SCREEN } from "@/lib/constants"
 
 interface WelcomeScreenProps {
@@ -38,7 +37,7 @@ export function WelcomeScreen({ botName, avatarUrl, turnstileSlot }: WelcomeScre
         {WELCOME_SCREEN.subtitle}
       </p>
 
-      {turnstileSlot ?? <Loader variant="pulse-dot" size="md" />}
+      {turnstileSlot}
     </div>
   )
 }
