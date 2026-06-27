@@ -156,7 +156,7 @@ App.tsx
 ```
 
 State is driven by `useChatWidget()` (custom hook wrapping `useChat` from
-`@ai-sdk/react`):
+`@ai-sdk/react`)
 
 #### Environment Variables
 
@@ -239,7 +239,7 @@ development), the Worker skips validation entirely and all requests are accepted
 #### Rate Limiting
 
 The Worker enforces a **two-layer rate limiting** strategy on the `/send-message`
-endpoint, keyed by client IP (`CF-Connecting-IP`):
+endpoint, keyed by client IP (`CF-Connecting-IP`)
 
 | Layer | Mechanism | Limit | Window | Scope |
 |---|---|---|---|---|
@@ -272,7 +272,7 @@ infrastructure issues.
 #### Environment Variables & Secrets
 
 | Variable | Required | Purpose |
-|---|---|---|---|
+|---|---|---|
 | `DIFY_API_URL` | yes | Base URL of the Dify instance (e.g. `https://dify.medilive.pl`). |
 | `DIFY_API_KEY` | fallback | Default API key - used if no workflow-specific key is found in KV. |
 | `SERVER_SECRET` | yes | HS256 secret for JWT signing/verification. Set as a Cloudflare **secret**. |
@@ -281,9 +281,7 @@ infrastructure issues.
 | `CF_ACCESS_CLIENT_SECRET` | no | Cloudflare Access service token secret. |
 
 **KV Namespace:** `KEYS_STORE`
-> Maps `dify_workflow_id → Dify API key`. This is how you associate a specific
-> clinic's workflow with its API credentials without hard-coding them in the
-> frontend.
+> Maps `dify_workflow_id → Dify API key`. This is how a specific clinic's workflow is associated with its API credentials without hard-coding them in the frontend.
 
 ---
 
