@@ -25,7 +25,7 @@
 
 ---
 
-## 📖 Overview
+## Overview
 
 MediLive is an AI chat platform purpose-built for Polish medical
 clinics. It ships as a set of three packages that together deliver:
@@ -61,7 +61,7 @@ capabilities out of the box:
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology | Purpose |
 |---|---|---|
@@ -77,7 +77,7 @@ capabilities out of the box:
 
 ---
 
-## 🗂️ Project Structure
+## Project Structure
 
 ```
 medilive-front/
@@ -116,7 +116,7 @@ medilive-front/
 
 ---
 
-## 🏗️ Architecture Diagram
+## Architecture Diagram
 
 ![MediLive Architecture Diagram](docs/arch_diagram.png)
 
@@ -124,7 +124,7 @@ medilive-front/
 
 ---
 
-## 📦 Package Breakdown
+## Package Breakdown
 
 ### 1. `medilive-chat-app` - React Chat Widget
 
@@ -411,7 +411,7 @@ keys; `utils-api` keys use the `apikey:` prefix).
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -475,7 +475,7 @@ cd medilive-utils-api && pnpm dev
 
 ---
 
-## 🧪 Testing & Linting
+## Testing & Linting
 
 Each package includes its own test and lint setup.
 
@@ -510,7 +510,7 @@ Tests cover API-key auth middleware, email/SMS endpoints, and D1 visit persisten
 
 ---
 
-## 🚢 Deployment
+## Deployment
 
 ### Workers (`medilive-chat-api`, `medilive-utils-api`)
 
