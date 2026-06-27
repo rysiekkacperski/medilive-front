@@ -16,7 +16,7 @@ export function PromptSuggestions({
     <div
       className={cn(
         "flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto",
-        "px-4 pb-3 pt-1 scrollbar-none"
+        "px-4 pb-3 pt-1 scrollbar-none hover:scrollbar-thin",
       )}
     >
       {suggestions.map((suggestion) => (

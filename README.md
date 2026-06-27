@@ -1,6 +1,31 @@
-# MediLive - AI chat platform for medical clinics
+# 🏥 MediLive — AI Chat Platform for Medical Clinics
 
-## Overview
+---
+
+## 📑 Table of Contents
+
+- [Overview](#-overview)
+- [Tech Stack](#-tech-stack)
+- [Project Structure](#-project-structure)
+- [Architecture Diagram](#-architecture-diagram)
+- [Package Breakdown](#-package-breakdown)
+  - [1. `medilive-chat-app` — React Chat Widget](#1-medilive-chat-app--react-chat-widget)
+  - [2. `medilive-chat-api` — Streaming Proxy Worker](#2-medilive-chat-api--streaming-proxy-worker)
+  - [3. `medilive-utils-api` — Utility API Worker](#3-medilive-utils-api--utility-api-worker)
+- [Getting Started](#-getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Install](#install)
+  - [Environment Variables](#environment-variables)
+  - [Run Locally](#run-locally)
+- [Testing & Linting](#-testing--linting)
+- [Deployment](#-deployment)
+- [Troubleshooting / FAQ](#-troubleshooting--faq)
+- [License](#-license)
+- [Contact](#-contact)
+
+---
+
+## 📖 Overview
 
 MediLive is an AI chat platform purpose-built for Polish medical
 clinics. It ships as a set of three packages that together deliver:
@@ -36,7 +61,62 @@ capabilities out of the box:
 
 ---
 
-## Architecture Diagram
+## 🛠️ Tech Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Frontend** | React 19, Vite 8, Tailwind CSS 4, shadcn/ui | Chat widget SPA |
+| **AI Streaming** | Vercel AI SDK v6 (`@ai-sdk/react`, `ai`) | Streaming chat transport & UI hooks |
+| **Markdown** | react-markdown, remark-gfm, Shiki | Rich message rendering with syntax highlighting |
+| **Proxy API** | Hono 4, Cloudflare Workers, eventsource-parser | SSE streaming proxy, JWT auth, rate limiting |
+| **Utility API** | Hono 4, Cloudflare Workers, Nodemailer, smsapi.pl | Email, SMS, visit persistence |
+| **Database** | Cloudflare D1 (SQLite) | Visits, institutions, doctors |
+| **KV Storage** | Cloudflare Workers KV | API keys, rate limit counters, workflow credentials |
+| **Security** | Cloudflare Turnstile, JWT (HS256) | Bot protection, stateless session management |
+| **Package Manager** | pnpm ≥ 9 | Monorepo dependency management |
+
+---
+
+## 🗂️ Project Structure
+
+```
+medilive-front/
+├── medilive-chat-app/       # React SPA — embeddable AI chat widget
+│   ├── src/
+│   │   ├── components/      # ChatWidget, ChatHeader, MessageList, ChatInput, …
+│   │   ├── hooks/           # useChatWidget (wraps @ai-sdk/react useChat)
+│   │   ├── lib/             # utils, cn, markdown config
+│   │   └── routes/          # ChatPage, VisitPage (react-router-dom)
+│   ├── .example.env         # Env var template (VITE_WORKER_API_URL, …)
+│   └── vite.config.ts
+│
+├── medilive-chat-api/       # Cloudflare Worker — Dify SSE proxy
+│   ├── src/
+│   │   ├── index.ts         # Hono app, CORS, /send-message endpoint
+│   │   ├── dify/            # Dify client, SSE-to-data-stream transform
+│   │   ├── auth/            # JWT minting/verification, Turnstile validation
+│   │   └── rate-limit/      # Burst + daily rate limiting
+│   ├── wrangler.jsonc       # KV bindings, rate limiter config
+│   └── test/                # Vitest tests
+│
+├── medilive-utils-api/      # Cloudflare Worker — email, SMS, visits
+│   ├── src/
+│   │   ├── index.ts         # Hono app, API-key auth middleware
+│   │   ├── routes/          # /mail, /sms, /visits endpoints
+│   │   └── services/        # Nodemailer, smsapi.pl, D1 queries
+│   ├── migrations/          # D1 SQL migrations (0001_…, 0002_…, 0003_…)
+│   ├── scripts/             # seed-novamed-apikey.ts (reference)
+│   └── wrangler.jsonc
+│
+├── docs/
+│   └── arch_diagram.png     # Architecture diagram
+│
+└── README.md
+```
+
+---
+
+## 🏗️ Architecture Diagram
 
 ![MediLive Architecture Diagram](docs/arch_diagram.png)
 
@@ -44,7 +124,7 @@ capabilities out of the box:
 
 ---
 
-## Package Breakdown
+## 📦 Package Breakdown
 
 ### 1. `medilive-chat-app` - React Chat Widget
 
@@ -331,7 +411,7 @@ keys; `utils-api` keys use the `apikey:` prefix).
 
 ---
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
 
@@ -343,7 +423,8 @@ keys; `utils-api` keys use the `apikey:` prefix).
 ### Install
 
 ```bash
-git clone <repo-url> medilive-front
+git clone git@github.com:medilive/medilive-front.git medilive-front
+# or use the HTTPS URL from your repository
 cd medilive-front
 
 cd medilive-chat-app   && pnpm install
@@ -394,7 +475,42 @@ cd medilive-utils-api && pnpm dev
 
 ---
 
-## Deployment
+## 🧪 Testing & Linting
+
+Each package includes its own test and lint setup.
+
+### Chat App (`medilive-chat-app`)
+
+```bash
+cd medilive-chat-app
+pnpm lint       # ESLint with React hooks & refresh plugins
+```
+
+The chat app currently uses ESLint for code quality. Tests run via the Vite dev server with browser-based verification.
+
+### Chat API (`medilive-chat-api`)
+
+```bash
+cd medilive-chat-api
+pnpm test       # Vitest (uses @cloudflare/vitest-pool-workers)
+```
+
+Tests cover the Dify SSE-to-data-stream transformation, JWT minting/verification,
+Turnstile validation, and rate limiting logic — all running inside the
+Cloudflare Workers runtime simulator.
+
+### Utils API (`medilive-utils-api`)
+
+```bash
+cd medilive-utils-api
+pnpm test       # Vitest (uses @cloudflare/vitest-pool-workers)
+```
+
+Tests cover API-key auth middleware, email/SMS endpoints, and D1 visit persistence.
+
+---
+
+## 🚢 Deployment
 
 ### Workers (`medilive-chat-api`, `medilive-utils-api`)
 
