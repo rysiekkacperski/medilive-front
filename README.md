@@ -1,30 +1,5 @@
 # MediLive — AI Chat Platform for medical clinics
 
----
-
-## Table of contents
-
-- [Overview](#-overview)
-- [Tech Stack](#-tech-stack)
-- [Project Structure](#-project-structure)
-- [Architecture Diagram](#-architecture-diagram)
-- [Package Breakdown](#-package-breakdown)
-  - [1. `medilive-chat-app` — React Chat Widget](#1-medilive-chat-app--react-chat-widget)
-  - [2. `medilive-chat-api` — Streaming Proxy Worker](#2-medilive-chat-api--streaming-proxy-worker)
-  - [3. `medilive-utils-api` — Utility API Worker](#3-medilive-utils-api--utility-api-worker)
-- [Getting Started](#-getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Install](#install)
-  - [Environment Variables](#environment-variables)
-  - [Run Locally](#run-locally)
-- [Testing & Linting](#-testing--linting)
-- [Deployment](#-deployment)
-- [Troubleshooting / FAQ](#-troubleshooting--faq)
-- [License](#-license)
-- [Contact](#-contact)
-
----
-
 ## Overview
 
 MediLive is an AI chat platform purpose-built for Polish medical
