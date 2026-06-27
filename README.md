@@ -1,8 +1,8 @@
-# 🏥 MediLive — AI Chat Platform for Medical Clinics
+# MediLive — AI Chat Platform for medical clinics
 
 ---
 
-## 📑 Table of Contents
+## Table of contents
 
 - [Overview](#-overview)
 - [Tech Stack](#-tech-stack)
